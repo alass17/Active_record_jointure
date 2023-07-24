@@ -1,0 +1,71 @@
+name: Ruby
+
+on:
+  push:
+
+permissions:
+  contents: read
+  issues: write 
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:12.1-alpine
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Ruby and Bundler
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.0.1
+          bundler-cache: true
+      - name: Set up Node
+        uses: actions/setup-node@v2
+        with:
+          node-version: '14'
+          check-latest: true
+      - name: Install Yarn
+        run: yarn --frozen-lockfile
+      - name: Create Evaluation File
+        run: |
+          rm -rf spec
+          git clone https://github.com/diveintocode-corp/cdp_web_rails_table_join_task_evaluation_code.git spec
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+      - name: Create Evaluation File
+        env:
+          RAILS_ENV: "test"
+          DATABASE_URL: "postgres://postgres@localhost:5432/delivery_launch"
+        run: |
+          bundle exec rails db:setup
+          bundle exec rspec spec/controllers/exercises_controller_spec.rb -r ./spec/my_formatter.rb -f MyFormatter -o .github/feedback_template.md
+        continue-on-error: true
+      - name: Rspec Results
+        env:
+          RAILS_ENV: "test"
+          DATABASE_URL: "postgres://postgres@localhost:5432/delivery_launch"
+        run: |
+          bundle exec rspec
+        continue-on-error: true
+      - uses: JasonEtco/create-an-issue@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          filename: .github/feedback_template.md
+      - name: Create Error File
+        if: failure()
+        run: |
+          echo -e "---\ntitle: ディープロ：課題評価に関するご連絡\n---\n## 課題の評価が実行できませんでした。\n### 以下の項目を確認してください。\n- クローン元のソースコードにあらかじめ用意されているGemfileのGemを削除したり、バージョンを変更したりしていませんか？\n- カリキュラムで推奨されているものと異なるバージョンのRubyを使用していませんか？\n- カリキュラムで推奨されているものと異なるバージョンのNode.jsを使用していませんか？\n\n**上記を確認して解決しない場合、お手数ですが、ディープロの質問投稿よりこちらのリポジトリのURLを投稿いただき、課題の評価が行われない旨をお知らせください。**" > .github/execution_error_template.md
+      - uses: JasonEtco/create-an-issue@v2
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          filename: .github/execution_error_template.md
